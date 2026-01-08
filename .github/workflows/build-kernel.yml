@@ -1,0 +1,97 @@
+name: Build Kernel with KernelSU-Next and SusFS
+
+on:
+  push:
+    branches: [sixteen-qpr1]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout kernel repo
+        uses: actions/checkout@v4
+        with:
+          path: kernel
+          fetch-depth: 0  # For git apply if needed
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y git ccache bc bison flex libelf-dev libssl-dev build-essential make gcc g++ python3 python3-pip zip unzip lz4 zstd libncurses5-dev patch
+
+      - name: Clone toolchain
+        run: git clone --depth=1 https://github.com/kdrag0n/proton-clang proton-clang
+
+      - name: Set PATH
+        run: echo "${{ github.workspace }}/proton-clang/bin" >> $GITHUB_PATH
+
+      - name: Clone KernelSU-Next
+        run: git clone https://github.com/KernelSU-Next/KernelSU-Next -b next kernelsu-next
+
+      - name: Clone SusFS
+        run: git clone https://gitlab.com/simonpunk/susfs4ksu.git -b kernel-4.14 susfs
+
+      - name: Revert SusFS to specific commit
+        working-directory: susfs
+        run: git checkout 898e9d4f8ca9b2f46b0c6b36b80a872b5b88d899
+
+      - name: Integrate KernelSU-Next using setup script
+        working-directory: kernel
+        run: curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
+
+      - name: Enable KernelSU in defconfig
+        working-directory: kernel
+        run: |
+          echo "CONFIG_KSU=y" >> arch/arm64/configs/sweet_defconfig
+
+      - name: Integrate SusFS
+        working-directory: kernel
+        run: |
+          cp ../susfs/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch KernelSU/
+          cp ../susfs/kernel_patches/50_add_susfs_in_kernel-4.14.patch ./
+          cp -r ../susfs/kernel_patches/fs/* fs/
+          cp -r ../susfs/kernel_patches/include/linux/* include/linux/
+          
+          cd KernelSU
+          patch -p1 < 10_enable_susfs_for_ksu.patch || (echo "Patch failed - check manually" && false)
+          
+          cd ..
+          patch -p1 < 50_add_susfs_in_kernel-4.14.patch || (echo "Patch failed - check manually" && false)
+          
+          # Enable SusFS configs
+          echo "CONFIG_KSU_SUSFS=y" >> arch/arm64/configs/sweet_defconfig
+          echo "KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> arch/arm64/configs/sweet_defconfig
+
+      - name: Build Kernel
+        working-directory: kernel
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          make O=out sweet_defconfig
+          make O=out -j$(nproc)
+
+      - name: Package Flashable ZIP
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3 anykernel
+          cp kernel/out/arch/arm64/boot/Image.gz anykernel/
+          cd anykernel
+          sed -i 's/device.name1=/device.name1="sweet"/' anykernel.sh
+          sed -i 's/block=/block=\/dev\/block\/bootdevice\/by-name\/boot;/' anykernel.sh
+          zip -r ../KernelSU-SusFS-Flashable.zip *
+
+      - name: Build SusFS Userspace Tool and Module
+        working-directory: susfs
+        run: |
+          ./build_ksu_susfs_tool.sh || echo "Userspace build failed - optional, continue"
+          ./build_ksu_module.sh || echo "Module build failed - optional, continue"
+          cp ksu_module_susfs/*.zip ../SusFS-Module.zip  # Adjust path if ZIP name differs
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernelsu-susfs
+          path: |
+            KernelSU-SusFS-Flashable.zip
+            SusFS-Module.zip
