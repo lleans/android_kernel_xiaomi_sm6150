@@ -1,0 +1,93 @@
+name: Build Kernel with KernelSU-Next and SusFS
+
+on:
+  push:
+    branches: [sixteen-qpr1]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout kernel repo
+        uses: actions/checkout@v4
+        with:
+          path: kernel
+          fetch-depth: 1  # For git apply if needed
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y git ccache bc bison flex libelf-dev libssl-dev build-essential make gcc g++ python3 python3-pip zip unzip lz4 zstd libncurses5-dev patch
+
+      - name: Setup toolchains
+        run: |
+          mkdir tools
+          cd tools
+          curl -L -o clang-r547379.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android16-qpr1-release/clang-r547379.tar.gz"
+          tar -xzf clang-r547379.tar.gz
+          curl -L -o gcc64.tar.gz "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/master.tar.gz"
+          mkdir gcc64
+          tar -xzf gcc64.tar.gz -C gcc64
+          curl -L -o gcc32.tar.gz "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/master.tar.gz"
+          mkdir gcc32
+          tar -xzf gcc32.tar.gz -C gcc32
+          
+          # Adjust GCC64 binaries
+          cd gcc64/bin
+          cp aarch64-linux-android-gcc aarch64-linux-android-gcc.bak
+          cp real-aarch64-linux-android-gcc aarch64-linux-android-gcc
+          cp aarch64-linux-android-g++ aarch64-linux-android-g++.bak
+          cp real-aarch64-linux-android-g++ aarch64-linux-android-g++
+          
+          # Adjust GCC32 binaries
+          cd ../../gcc32/bin
+          cp arm-linux-androideabi-gcc arm-linux-androideabi-gcc.bak
+          cp real-arm-linux-androideabi-gcc arm-linux-androideabi-gcc
+          cp arm-linux-androideabi-g++ arm-linux-androideabi-g++.bak
+          cp real-arm-linux-androideabi-g++ arm-linux-androideabi-g++
+
+      - name: Set PATH and environment variables
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export PATH="${{ github.workspace }}/tools/clang-r547379/bin:$PATH"
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export CROSS_COMPILE="${{ github.workspace }}/tools/gcc64/bin/aarch64-linux-android-"
+          export CROSS_COMPILE_ARM32="${{ github.workspace }}/tools/gcc32/bin/arm-linux-androideabi-"
+          export CROSS_COMPILE_COMPAT="$CROSS_COMPILE_ARM32"
+
+      - name: Build Kernel
+        working-directory: kernel
+        run: |
+          mkdir out
+          make O=out sweet_defconfig
+          echo "KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> out/.config
+          make O=out CC=clang \
+            LD=ld.lld \
+            ARCH=arm64 \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            CROSS_COMPILE=$CROSS_COMPILE \
+            CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32 \
+            CROSS_COMPILE_COMPAT=$CROSS_COMPILE_ARM32 \
+            Image.gz-dtb \
+            -j$(nproc)
+
+      - name: Package Flashable ZIP
+        run: |
+          git clone --depth 1 https://github.com/lleans/AnyKernel3.git -b sweet-sweetin-pixelos anykernel
+          cp kernel/out/arch/arm64/boot/Image.gz-dtb anykernel/
+          cd anykernel
+          zip -r ../sweet_kernel_su.zip * -x .git README.md
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernelsu
+          path: |
+            sweet_kernel_su.zip
