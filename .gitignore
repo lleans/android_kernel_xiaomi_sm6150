@@ -9,7 +9,6 @@
 #
 # Normal rules (sorted alphabetically)
 #
-.*
 *.a
 *.bin
 *.bz2
@@ -31,7 +30,8 @@
 *.o
 *.o.*
 *.order
-*.patch
+*.rej
+*.orig
 *.s
 *.so
 *.so.dbg
