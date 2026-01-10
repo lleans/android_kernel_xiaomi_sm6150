@@ -27,22 +27,18 @@ jobs:
           cd tools
           curl -L -o clang-r547379.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android16-qpr1-release/clang-r547379.tar.gz"
           tar -xzf clang-r547379.tar.gz
-          curl -L -o gcc64.tar.gz "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/master.tar.gz"
-          mkdir gcc64
-          tar -xzf gcc64.tar.gz -C gcc64
-          curl -L -o gcc32.tar.gz "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/master.tar.gz"
-          mkdir gcc32
-          tar -xzf gcc32.tar.gz -C gcc32
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
           
           # Adjust GCC64 binaries
-          cd gcc64/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9/bin
+          cd gcc64/bin
           cp aarch64-linux-android-gcc aarch64-linux-android-gcc.bak
           cp real-aarch64-linux-android-gcc aarch64-linux-android-gcc
           cp aarch64-linux-android-g++ aarch64-linux-android-g++.bak
           cp real-aarch64-linux-android-g++ aarch64-linux-android-g++
           
           # Adjust GCC32 binaries
-          cd ../../gcc32/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9/bin
+          cd ../../gcc32/bin
           cp arm-linux-androideabi-gcc arm-linux-androideabi-gcc.bak
           cp real-arm-linux-androideabi-gcc arm-linux-androideabi-gcc
           cp arm-linux-androideabi-g++ arm-linux-androideabi-g++.bak
