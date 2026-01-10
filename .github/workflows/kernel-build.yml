@@ -58,7 +58,9 @@ jobs:
         working-directory: kernel
         run: |
           mkdir out
-          make O=out sweet_defconfig
+          make O=out \
+            ARCH=arm64 \
+            sweet_defconfig
           echo "KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> out/.config
           make O=out CC=clang \
             LD=ld.lld \
